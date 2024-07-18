@@ -202,47 +202,39 @@ struct tDlJob
 			return false;
 		}
 
-		// start modifying the target URL, point of no return
-		m_pCurBackend = nullptr;
-		bool bWasBeMode = m_bBackendMode;
-		m_bBackendMode = false;
+		auto disableBackends = [&]() { m_bBackendMode = false; m_pCurBackend = nullptr; };
 
 		auto sLocationDecoded = UrlUnescape(pNewUrl);
 
-		tHttpUrl newUri;
-		if (newUri.SetHttpUrl(sLocationDecoded, false))
-		{
-			dbgline;
-			m_remoteUri = newUri;
-			return true;
-		}
 		// ok, some protocol-relative crap? let it parse the hostname but keep the protocol
 		if (startsWithSz(sLocationDecoded, "//"))
 		{
 			stripPrefixChars(sLocationDecoded, "/");
+			disableBackends();
 			return m_remoteUri.SetHttpUrl(
 					m_remoteUri.GetProtoPrefix() + sLocationDecoded);
 		}
 
-		// recreate the full URI descriptor matching the last download
-		if (bWasBeMode)
-		{
-			if (!m_pCurBackend)
-			{
-                sErrorMsg = "Bad redirection target";
-				return false;
-			}
-			auto sPathBackup = m_remoteUri.sPath;
-			m_remoteUri = *m_pCurBackend;
-			m_remoteUri.sPath += sPathBackup;
-		}
-
 		if (startsWithSz(sLocationDecoded, "/"))
 		{
+#error fixme, for non-absolute-url modes needs to recreate the base path? or not? as
 			m_remoteUri.sPath = sLocationDecoded;
 			return true;
 		}
-		// ok, must be relative
+		
+		{
+			tHttpUrl newUri;
+			if (newUri.SetHttpUrl(sLocationDecoded, false))
+			{
+				dbgline;
+				disableBackends();
+				m_remoteUri = newUri;
+				return true;
+			}
+		}
+
+		// ok, must be relative to current base
+#error fixme, BS, this convert file URI to a subfolder with that name
 		m_remoteUri.sPath += (sPathSepUnix + sLocationDecoded);
 		return true;
 	}
