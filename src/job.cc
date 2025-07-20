@@ -248,6 +248,11 @@ job::~job()
 	}
 
 	bool bErr = m_sFileLoc.empty() || stcode >= 400;
+	if (bErr &&m_pItem.get())
+	{
+		USRDBG("job::~job TOP TOP TOP marking as faulty...");
+		m_pItem.get()->MarkFaulty(true);
+	}
 
 	m_pParentCon.LogDataCounts(
 				m_sFileLoc + (bErr ? (miscError + ltos(stcode) + ']') : sEmptyString),
