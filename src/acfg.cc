@@ -754,6 +754,8 @@ void PostProcConfig()
 		cachedir.erase(pos, 1);
 
 	cacheDirSlash=cachedir+CPATHSEP;
+   cerr << "TOP TOP TOP: SETTING cachedirSlash to " << cacheDirSlash << endl;
+
 
    if(!pidfile.empty() && pidfile.at(0) != CPATHSEP)
 	   BARF("Pid file path must be absolute, terminating...");

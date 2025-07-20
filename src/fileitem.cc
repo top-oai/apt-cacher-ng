@@ -453,6 +453,8 @@ fileitem_with_storage::~fileitem_with_storage()
 	if (m_sPathRel.empty())
 		return;
 
+	USRDBG("fileitem_with_storage::~fileitem_with_storage TOP TOP TOP destroying: " << m_sPathRel << ", m_eDestroy = " << (int) m_eDestroy);
+
 	mstring sPathAbs, sPathHead;
 	auto calcPath = [&]() {
 		sPathAbs = SABSPATH(m_sPathRel);
@@ -488,6 +490,7 @@ fileitem_with_storage::~fileitem_with_storage()
 	case EDestroyMode::DELETE:
 	{
 		calcPath();
+		USRDBG("TOP TOP TOP DELETING THIS SHIT... sPathAbs: " << sPathAbs.c_str() << ", m_sPathRel: " << m_sPathRel);
 		unlink(sPathAbs.c_str());
 		unlink(sPathHead.c_str());
 		break;
@@ -495,6 +498,7 @@ fileitem_with_storage::~fileitem_with_storage()
 	case EDestroyMode::DELETE_KEEP_HEAD:
 	{
 		calcPath();
+		USRDBG("TOP TOP TOP SOFT DELETING THIS SHIT: " << sPathAbs);
 		unlink(sPathAbs.c_str());
 		fileitem_with_storage::SaveHeader(true);
 		break;
@@ -538,9 +542,14 @@ void fileitem::DlFinish(bool forceUpdateHeader)
 		return;
 	}
 
-	// XXX: double-check whether the content length in header matches checked size?
-
-	m_status = FIST_COMPLETE;
+	if (m_nContentLength > 0 && m_nContentLength != m_nSizeChecked)
+	{
+		LOG("TOP TOP TOP Content length mismatch: got: " << m_nContentLength << ", expected: " << m_nSizeChecked);
+		DlSetError({500, "Content length mismatch"}, EDestroyMode::DELETE);
+	} else 
+	{
+		m_status = FIST_COMPLETE;
+	}
 
 	if (cfg::debug & log::LOG_MORE)
 		log::misc(tSS() << "Download of " << m_sPathRel << " finished");
@@ -550,6 +559,8 @@ void fileitem::DlFinish(bool forceUpdateHeader)
 	// we are done! Fix header after chunked transfers?
 	if (m_nContentLength < 0 || forceUpdateHeader)
 	{
+		LOG("  TOP TOP TOP Updating header, m_nContentLength: " << m_nContentLength
+				<< ", m_nSizeChecked: " << m_nSizeChecked);
 		if (m_nContentLength < 0)
 			m_nContentLength = m_nSizeChecked;
 
@@ -576,7 +587,7 @@ void fileitem::DlSetError(const tRemoteStatus& errState, fileitem::EDestroyMode 
 	DBGQLOG("Declared FIST_DLERROR: " << m_responseStatus.code << " " << m_responseStatus.msg);
 	USRDBG("TOP TOP TOP Download of " << m_sPathRel << " HAS ERRORS.... kmode: " << (int) kmode
 			<< ", m_eDestroy: " << (int) m_eDestroy);
-	if (kmode < m_eDestroy)
+	if (kmode > m_eDestroy)
 		m_eDestroy = kmode;
 }
 
