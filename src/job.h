@@ -16,6 +16,39 @@ class header;
 
 class job
 {
+private:
+	// Lock controlling access to inProgress
+	static base_with_mutex inProgressLock;
+
+	// The data that we store in inProgress
+	struct Stuff {
+		std::condition_variable cv;
+		tFileItemPtr otherThread = 0;
+	};
+
+	// Map from URL to Stuff for in progress jobs that are requesting this file.
+	// The entry is "owned" by the job that added it and it is deleted when the job completes.
+	static std::map<std::string, std::shared_ptr<Stuff>> inProgress;
+
+	// Where all the real work is done.
+	struct Lockstuff {
+		const std::string url;
+		std::shared_ptr<Stuff> stuff;
+		bool owner = false;
+		Lockstuff(const std::string& url_);
+		void setReturnValue(tFileItemPtr tfip);
+		~Lockstuff();
+
+	};
+
+	// Simple class which is destroyed when the job is destroyed. It deletes the entry from inProgress.
+	struct inProgressCleanup {
+		const std::string url;
+		inProgressCleanup(const std::string& url_) : url(url_) { }
+		~inProgressCleanup();
+	};
+
+	std::unique_ptr<inProgressCleanup> m_ipc;
 public:
 
     enum eJobResult : short

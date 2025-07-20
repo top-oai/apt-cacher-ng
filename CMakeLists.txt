@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.1)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # try to set the best C++ language level
 set(CMAKE_CXX_STANDARD 20)
 # let it take the lowest version, we need some precursor of C++14x

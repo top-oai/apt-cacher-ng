@@ -662,6 +662,18 @@ void job::Prepare(const header &h, string_view headBuf, cmstring& callerHostname
 		else
 			m_sFileLoc=theUrl.sHost+theUrl.sPath;
 
+		// Here we serialize multiple clients trying to download the
+		// same file. Only one thread at a time per URL is allowed to
+		// proceed further in this function.
+		Lockstuff g{h.getRequestUrl()};
+
+		// Check if another job is running. If so link to that.
+		if(g.stuff->otherThread) {
+			m_pItem = m_pParentCon.GetItemRegistry()->Create(m_sFileLoc, ESharingHow::ALWAYS_TRY_SHARING, fileitem::tSpecialPurposeAttr{});
+			USRDBG("Linked to other job");
+			return;
+		}
+
 		fileitem::tSpecialPurposeAttr attr {
 			! cfg::offlinemode && data_type == FILE_VOLATILE,
 					m_bIsHeadOnly,
@@ -697,8 +709,14 @@ void job::Prepare(const header &h, string_view headBuf, cmstring& callerHostname
 		if(cfg::trackfileuse && fistate >= fileitem::FIST_DLGOTHEAD && fistate < fileitem::FIST_DLERROR)
 			m_pItem.get()->UpdateHeadTimestamp();
 
-		if(fistate==fileitem::FIST_COMPLETE)
+		if(fistate==fileitem::FIST_COMPLETE) {
+			// Tell everybody waiting for this thread to complete
+			// where to get their m_pItem and register a cleanup
+			// when this job completes.
+			g.setReturnValue(m_pItem.get());
+			m_ipc = std::make_unique<inProgressCleanup>(h.getRequestUrl());
 			return; // perfect, done here
+		}
 
 		if(cfg::offlinemode) { // make sure there will be no problems later in SendData or prepare a user message
 			// error or needs download but freshness check was disabled, so it's really not complete.
@@ -759,6 +777,11 @@ void job::Prepare(const header &h, string_view headBuf, cmstring& callerHostname
 				USRERR("PANIC! Error creating download job for " << m_sFileLoc);
 				return report_overload(__LINE__);
 			}
+			// Tell everybody waiting for this thread to complete
+			// where to get their m_pItem and register a cleanup
+			// when this job completes.
+			g.setReturnValue(m_pItem.get());
+			m_ipc = std::make_unique<inProgressCleanup>(h.getRequestUrl());
 		}
 	}
 	catch (const std::bad_alloc&) // OOM, may this ever happen here?
@@ -1190,4 +1213,58 @@ void job::AppendMetaHeaders()
 			  << "\r\nServer: Debian Apt-Cacher NG/" ACVERSION "\r\n"
 	"\r\n";
 }
+
+job::Lockstuff::Lockstuff(const std::string& url_): url(url_) {
+	lockuniq g{inProgressLock};
+	LOGSTARTFUNC;
+	while(true) {
+		auto [it, ins] = inProgress.insert({url, nullptr});
+		if(!ins) {
+			stuff = it->second;
+			if (stuff->otherThread) {
+				break;
+			}
+			// Someone is already downloading this. Add ourselves to the waiters.
+			stuff->cv.wait(g._guard);
+		} else {
+			stuff = it->second = std::make_shared<Stuff>();
+			owner = true;
+			break;
+		}
+	}
+}
+
+void job::Lockstuff::setReturnValue(tFileItemPtr tfip) {
+	LOGSTARTFUNC;
+	if (const auto& it = inProgress.find(url); it != inProgress.end()) {
+		stuff->otherThread = tfip;
+	}
+}
+
+job::Lockstuff::~Lockstuff() {
+	lockuniq g{inProgressLock};
+	LOGSTARTFUNC;
+	if(owner) {
+		stuff->cv.notify_all();
+		// After notify_all, any waiting threads are guaranteed to
+		// be blocked on inProgressLock, not on the condition so
+		// it's safe to delete it. However we have to use shared
+		// pointers because we don't know how long it will take the
+		// waiters to read the tFileItemPtr;
+		if (!stuff->otherThread) {
+			inProgress.erase(url);
+		}
+	}
+}
+
+job::inProgressCleanup::~inProgressCleanup() {
+	lockuniq g{inProgressLock};
+	LOGSTARTFUNC;
+	if (const auto& it = inProgress.find(url); it != inProgress.end()) {
+		inProgress.erase(it);
+	}
+}
+
+std::map<std::string, std::shared_ptr<job::Stuff>> job::inProgress;
+base_with_mutex job::inProgressLock;
 }
