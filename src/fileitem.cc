@@ -574,7 +574,7 @@ void fileitem::DlSetError(const tRemoteStatus& errState, fileitem::EDestroyMode 
 	m_responseStatus = errState;
 	m_status = FIST_DLERROR;
 	DBGQLOG("Declared FIST_DLERROR: " << m_responseStatus.code << " " << m_responseStatus.msg);
-	if (kmode < m_eDestroy)
+	if (kmode > m_eDestroy)
 		m_eDestroy = kmode;
 }
 
